@@ -13,14 +13,19 @@ import subprocess
 import sys
 import tarfile
 
-from filelock import FileLock, Timeout
+from filelock import FileLock
 
-#To enable debug logging, copy "user_settings.sample.py" to "user_settings.py"
-#and edit it if needed.
+try:
+    # py2
+    from ConfigParser import ConfigParser
+except ImportError:
+    # py3
+    from configparser import ConfigParser
 
-CURRENT_PREFIX_VERSION="3.7-2"
 
-PFX="Proton: "
+CURRENT_PREFIX_VERSION = "3.7-2"
+
+PFX = "Proton: "
 
 if "Darwin" in os.uname()[0]:
     ld_path_var = "DYLD_LIBRARY_PATH"
@@ -80,9 +85,41 @@ def mergedirs(src, dst):
             if not os.path.exists(dst_file):
                 real_copy(src_file, dst_file)
 
+
+def make_conf(conf):
+    """
+    Fills a ConfigParser object with default configuration data.
+
+    Any user-configurable options should be defined here first.
+
+    Syntax:
+        conf.set(<section>, <param-name>, <default-value>)
+    """
+    conf.add_section("DXVK")
+    conf.set("DXVK", "hud", "")
+
+    conf.add_section("WINE")
+    conf.set("WINE", "d3d11", "0")
+    conf.set("WINE", "d3d9", "0")
+    conf.set("WINE", "esync", "1")
+
+    conf.add_section("PROTON")
+    conf.set("PROTON", "log", "0")
+    conf.set("PROTON", "debug-scripts", "0")
+    conf.set("PROTON", "debug-dir", "/tmp/proton_%s" % os.environ["USER"])
+
+
 if not ("STEAM_COMPAT_DATA_PATH" in os.environ):
     log("No compat data path?")
     sys.exit(1)
+
+conf = ConfigParser.ConfigParser()
+
+if not conf.read('proton.conf'):
+    make_conf(conf)
+    # automatically create conf file if it doesn't exist
+    with open('proton.conf', 'w') as fd:
+        conf.write(fd)
 
 basedir = os.path.dirname(sys.argv[0])
 bindir = basedir + "/dist/bin/"
@@ -104,6 +141,12 @@ with dist_lock:
         shutil.copy(basedir + "/version", basedir + "/dist/")
 
 env = dict(os.environ)
+# Merges env vars and proton.conf options into a single mapping, env vars have precedence over
+# proton.conf. Use this if an option can be defined both in proton.conf and as an env var.
+opts = {
+    "p_log": env.get("PROTON_LOG", conf.getboolean("PROTON", "log")),
+
+}
 dlloverrides = {}
 
 #for performance, logging is disabled by default; override with user_settings.py
@@ -133,19 +176,20 @@ with dist_lock:
 prefix = os.environ["STEAM_COMPAT_DATA_PATH"] + "/pfx/"
 env["WINEPREFIX"] = prefix
 
-if "PROTON_LOG" in env:
+
+if opts["p_log"]:
     env["WINEDEBUG"] = "+timestamp,+pid,+tid,+seh,+debugstr,+module"
 
 #load environment overrides
-if os.path.exists(basedir + "/user_settings.py"):
-    try:
-        import user_settings
-        env.update(user_settings.user_settings)
-    except e:
-        log("************************************************")
-        log("THERE IS AN ERROR IN YOUR user_settings.py FILE:")
-        log("%s" % sys.exc_info()[1])
-        log("************************************************")
+# if os.path.exists(basedir + "/user_settings.py"):
+    # try:
+        # import user_settings
+        # env.update(user_settings.user_settings)
+    # except e:
+        # log("************************************************")
+        # log("THERE IS AN ERROR IN YOUR user_settings.py FILE:")
+        # log("%s" % sys.exc_info()[1])
+        # log("************************************************")
 
 def check_environment(env_name, config_name):
     if not env_name in env:
