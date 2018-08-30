@@ -1,0 +1,16 @@
+#!/usr/bin/env sh
+# hack for distros which don't set /usr/bin/env python unless py2 is installed
+
+# get current file's dir
+dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
+pybins=('python' 'python3' 'python2')
+
+for pybin in "${pybins[@]}"
+do
+    if [ -x "$(command -v $pybin)" ]; then
+        echo "Proton: using $pybin"
+        exec $pybin "$dir/proton.py" "$@"
+        break
+    fi
+done
+echo "Proton: python was not found on your system"
